@@ -106,15 +106,18 @@ class GRU(Estacionamento):
 
 
 class EconoPark(Estacionamento):
-    def __init__(self, ini: dt2, fim: dt2):
+    def __init__(self, ini: dt2, fim: dt2, promo: str):
         super().__init__(ini, fim)
         ini, fim = self.ini, self.fim
+        response = requests.get('https://www.econoparkaeroporto.com.br/')
+        cookies = response.cookies
+        response = requests.get('https://www.econoparkaeroporto.com.br/Reservas.aspx',
+                                cookies=cookies)
+        token = get_hiddens(response.text)['_token']
         response = requests.post('https://www.econoparkaeroporto.com.br/Reservas.aspx',
-                                 cookies={
-                                     'econopark_aeroporto_session': 'eyJpdiI6IlNHcWhSMnJwXC90Tkg5SHR3a3JmdFdBPT0iLCJ2YWx1ZSI6ImNiRlM5d1hUYjlvVGw0SVBzZGdnZElxTzU4cWxEQjVXaFwvNEhMNnZPSFZaUFFpcVQwZFJYOWM2TTZRK0VqVjdOV0c3eWxsOTZuVnFVVjBJV0lZXC9kRnkwSUhlVGJnUVJKaUVEOXpEVk9XUStcL0tQZzJ0ODJ6bU1ybEZJZGtKSVhzIiwibWFjIjoiNTlkZTkwNTQ4MGUyZDA3MWQyNWU5MDM2YmYwYjZmYzE5ZGE4YmIxOTQ4NmY0YzcyZTNlNTY3ZmE1ZmE2ZGM4OSJ9'
-                                 },
+                                 cookies=cookies,
                                  data={
-                                     '_token': 'gNlC7y5f33FH39ehyrcqmc43FVYeB8zsDqtj3NJv',
+                                     '_token': token,
                                      'initial-date': ini.strftime('%d/%m/%Y'),
                                      'initial-hour': ini.strftime('%H'),
                                      'initial-minute': ini.strftime('%M'),
@@ -126,7 +129,7 @@ class EconoPark(Estacionamento):
         preco = re.search(r'Tarifa On-line</div>\s+R\$(\d+,\d{2})', response.text)
         assert preco, 'ERRO na busca do EconoPark!'
         self.lista = [(float(preco.group(1).replace(',', '.')),
-                       'EconoPark')]
+                       '')]
 
 
 class AeroPark(Estacionamento):
