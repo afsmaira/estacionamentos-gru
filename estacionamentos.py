@@ -1,7 +1,39 @@
 """ https://www.melhoresdestinos.com.br/estacionamento-aeroporto-guarulhos.html """
 import re
 import requests
-from datetime import datetime as dt2
+import math
+from datetime import datetime as dt2, timedelta
+from bs4 import BeautifulSoup
+
+import googlemaps
+import configparser
+
+
+cfg = configparser.ConfigParser()
+cfg.optionxform = str
+cfg.read('config.cfg')
+
+api_key = cfg['Maps'].get('APIKey', None)
+try:
+    gmaps = googlemaps.Client(key=api_key)
+except ValueError:
+    gmaps = None
+terminal = cfg['Maps'].get('terminal', '1')
+
+
+def busca_local(maps, q):
+    if maps is None:
+        return
+    try:
+        return maps.find_place(q, 'textquery',
+                               fields=["name"])['candidates'][0]['name']
+    except googlemaps.exceptions.ApiError:
+        return
+
+
+def get_hiddens(txt):
+    return dict(re.findall(r'<input type="hidden" name="([^"]+)" value="([^"]+)">',
+                           txt))
 
 
 class Estacionamento:
@@ -171,9 +203,218 @@ class AeroPark(Estacionamento):
         if preco_d is not None:
             self.lista.append((preco_d, 'Descoberto'))
         if preco_c is not None:
-            self.lista.append((preco_c, 'AeroPark coberto'))
             self.lista.append((preco_c, 'Coberto'))
 
 
+class AirportPark(Estacionamento):
+    """ https://airportpark.com.br/ """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        response = requests.get('https://airportpark.com.br/tarifa-reservas')
+        ops = response.text.split('<select id="partnership"', 1)[1]
+        ops = ops.split('</select', 1)[0]
+        convenios = re.findall(r'<option value="\d+"\s*>([^<]+)', ops)
+        convenios = ';'.join(convenios)
+        cookies = response.cookies
+        hid = get_hiddens(response.text)
+        token = hid['_token']
+        method = hid['_method']
+        data = {
+            '_token': token,
+            '_method': method,
+            'dataEntrada': self.ini.strftime('%d/%m/%Y'),
+            'ddlHoraEntrada': self.ini.strftime('%H:%M'),
+            'ddlQtdVeiculos': '1',
+            'dataSaida': self.fim.strftime('%d/%m/%Y'),
+            'ddlHoraSaida': self.fim.strftime('%H:%M'),
+            'partnership': '',
+            'partnershipTier': '',
+            'coupon': promo,
+        }
+
+        response = requests.post('https://airportpark.com.br/tarifa-reservas', cookies=cookies,
+                                 data=data)
+        if 'não é válido' in response.text:
+            data['coupon'] = ''
+            response = requests.post('https://airportpark.com.br/tarifa-reservas', cookies=cookies,
+                                     data=data)
+        soup = BeautifulSoup(response.text,
+                             "html.parser")
+        div = soup.find("div",
+                        {"class": 'price-amount'}
+                        )
+        span = div.find('span',
+                        {'class': 'text-big'}
+                        )
+        preco = float(span.text.replace(',', '.'))
+        self.lista = [(preco, '',
+                       f'Convênios, verificar no site: {convenios}')]
+
+
+class BRParking(Estacionamento):
+    """ https://brparking.com.br/ """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        response = requests.get('https://brparking.com.br/')
+        t1, p1 = re.search(r'<h2>até (\d+) horas</h2>\s*<span>R\$\s+([0-9,]+)</span>',
+                           response.text,
+                           flags=re.IGNORECASE).groups()
+        t1 = int(t1)
+        p1 = float(p1.replace(',', '.'))
+        t2, p2 = re.search(r'<h2>Diária (24) HORAS</h2>\s*<span>R\$\s+([0-9,]+)</span>',
+                           response.text,
+                           flags=re.IGNORECASE).groups()
+        t2 = int(t2)
+        p2 = float(p2.replace(',', '.'))
+        t3, t4, p34 = re.search(r'DE (\d+) À (\d+) DIAS</h2>\s*<span>R\$\s+([0-9,]+)</span>',
+                                response.text,
+                                flags=re.IGNORECASE).groups()
+        t3 = int(t3)
+        t4 = int(t4)
+        p34 = float(p34.replace(',', '.'))
+        t5, t6, p56 = re.search(r'Acima (\d+) À (\d+) DIAS</h2>\s*<span>R\$\s+([0-9,]+)</span>',
+                                response.text,
+                                flags=re.IGNORECASE).groups()
+        t5 = int(t5)
+        t6 = int(t6)
+        p56 = float(p56.replace(',', '.'))
+        ad1, ad2 = re.findall(r'Hora adicional R\$ ([0-9,]+)',
+                              response.text,
+                              flags=re.IGNORECASE)
+        ad1 = float(ad1.replace(',', '.'))
+        ad2 = float(ad2.replace(',', '.'))
+        tol = int(re.search(r'Tolerância de até (\d+) horas',
+                            response.text,
+                            flags=re.IGNORECASE).group(1))
+        if self.dt < timedelta(hours=t1):
+            preco = p1
+        elif self.dt < timedelta(days=t3):
+            preco = p2 * self.dt.days + ad1 * math.ceil(self.dt.seconds / 3600)
+        elif self.dt < timedelta(days=t4, hours=tol):
+            preco = p34
+        elif self.dt < timedelta(days=t6):
+            preco = p56
+        else:
+            mais_30 = self.dt - timedelta(days=30)
+            preco = p56 + ad2 * (mais_30.days * 24 + math.ceil(mais_30.seconds / 3600))
+        self.lista = [(preco, '')]
+
+
+class DecolarPark(Estacionamento):
+    """ https://www.decolarpark.com.br/ """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        response = requests.get('https://www.decolarpark.com.br/')
+        tabelas = re.split(r'tarifas - vagas (des)?cobertas',
+                           response.text,
+                           flags=re.IGNORECASE)[1:]
+        for tabela, des in zip(tabelas[1::2], ['des', '']):
+            for c1, c2 in re.findall(r'<tr>\s*<td>([^<]+)</td>\s*<td>([^<]+)</td>\s*</tr>',
+                                     tabela):
+                t = re.search(r'(\d+) horas', c1)
+                if not t:
+                    continue
+                t = int(t.group(1))
+                p = float(re.search(r'R\$\s*(\d+,\d+)',
+                                    c2).group(1).replace(',', '.'))
+                if self.dt < timedelta(hours=t):
+                    self.lista.append((p, f'{des}coberto'))
+                    break
+
+
+class FlyPark(Estacionamento):
+    """ https://www.flypark.com.br/ """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        response = requests.get('https://flypark.com.br/')
+        cookies = response.cookies
+        params = {
+            'date_start': self.ini.strftime('%d/%m/%Y'),
+            'time_start': self.ini.strftime('%H:%M'),
+            'date_end': self.fim.strftime('%d/%m/%Y'),
+            'time_end': self.fim.strftime('%H:%M'),
+        }
+        response = requests.get('https://flypark.com.br/reservar',
+                                params=params, cookies=cookies)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        divs = soup.findAll('div',
+                            {'class': 'reserve-product'})
+        for div in divs:
+            p = div.div.div.input['data-price'].replace(',', '.')
+            tipo = div.findChildren('h3')[0].text
+            tipo = re.sub(r'\s+', ' ', tipo).strip()
+            self.lista.append((float(p), f'{tipo}'))
+
+
+class PoncePark(Estacionamento):
+    """ https://poncepark.com.br/ """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        ini = self.ini.strftime('%Y-%m-%dT%H:%M:00')
+        fim = self.fim.strftime('%Y-%m-%dT%H:%M:00')
+        for des in ['des', '']:
+            response = requests.get(
+                f'https://poncepark-app.movepark.com.br/api/v3/cart/calculation-price?product_slug=vaga-{des}coberta&'
+                f'initial_date={ini}.000000Z&final_date={fim}.000000Z&lang=pt-br',
+            )
+            self.lista.append((response.json()['data']['cart']['total_price']['price_value'],
+                               f'{des}coberto'))
+
+
+class UniqueParking(Estacionamento):
+    """ https://uniqueparking.com.br/ """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        response = requests.get('https://uniqueparking.com.br/')
+        soup = BeautifulSoup(response.text, 'html.parser')
+        sel = soup.find('select', {'name': 'input_15'})
+        ops = [tuple(op['value'].split('|'))
+               for op in sel.find_all('option')]
+        for tipo, p in ops:
+            p = float(p)
+            p = p * self.dt.days + (p if self.dt.seconds > 3600 else 0)
+            self.lista.append((p, f'{tipo}'))
+
+
+class UrbanPark(Estacionamento):
+    """ https://www.urbanparkgru.com.br/ """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        response = requests.get('https://www.urbanparkgru.com.br/',
+                                headers={
+                                    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+                                })
+        soup = BeautifulSoup(response.text, 'html.parser')
+        linhas = soup.find_all('th', {'scope': 'row'})
+        ps = [linhas[0].parent.findChildren('td')[0].text,
+              linhas[0].parent.findChildren('td')[1].text,
+              linhas[-1].parent.findChildren('td')[0].text,
+              linhas[-1].parent.findChildren('td')[1].text,
+              ]
+        ps = [0.01*int(re.sub(r'\D', '', pi))
+              for pi in ps]
+        t1, t2 = re.search(r'(\d+) a (\d+) dias',
+                           linhas[-1].text).groups()
+        t1 = int(t1)
+        t2 = int(t2)
+        if self.dt < timedelta(days=t1):
+            preco1 = ps[0] * (self.dt.days + int(self.dt.seconds > 0))
+            preco2 = ps[1] * (self.dt.days + int(self.dt.seconds > 0))
+        elif self.dt < timedelta(days=t2):
+            preco1 = ps[2]
+            preco2 = ps[3]
+        else:
+            self.dt -= timedelta(days=t2)
+            preco1 = ps[2] + ps[0] * (self.dt.days + int(self.dt.seconds > 0))
+            preco2 = ps[3] + ps[1] * (self.dt.days + int(self.dt.seconds > 0))
+        self.lista = [(preco1, 'descoberto'),
+                      (preco2, 'coberto')]
 
 
