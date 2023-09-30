@@ -44,6 +44,7 @@ class Estacionamento:
         self.dt = self.fim - self.ini
         self.lista = []
         self.i = 0
+        self.busca_maps = None
 
     def __iter__(self):
         self.i = 0
@@ -133,7 +134,7 @@ class GRU(Estacionamento):
         for p, n in self.lista:
             if n not in self.lista:
                 aux[n] = p
-        self.lista = [(p, n.replace('Reserva', 'GRU'))
+        self.lista = [(p, n.replace('Reserva ', ''))
                       for n, p in aux.items()]
 
 
@@ -193,7 +194,7 @@ class AeroPark(Estacionamento):
         precos_c = precos[len(nums_d):len(nums_d) + len(nums_c)]
         preco_c = None
         if nd <= nums_c[0]:
-            preco_c = nd*precos_c[0]
+            preco_c = nd * precos_c[0]
         else:
             for ns, ps in zip(nums_c[1:], precos_c[1:]):
                 if nd <= ns:
