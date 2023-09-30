@@ -133,9 +133,11 @@ class EconoPark(Estacionamento):
 
 
 class AeroPark(Estacionamento):
-    def __init__(self, ini, fim):
+    """ https://www.aeroparking.com.br/index.php """
+
+    def __init__(self, ini, fim, promo):
         super().__init__(ini, fim)
-        nd = (self.fim-self.ini).days + int((self.fim-self.ini).seconds > 0)
+        nd = (self.fim - self.ini).days + int((self.fim - self.ini).seconds > 0)
         response = requests.get('https://www.aeroparking.com.br/precos/index.php')
         nums = re.findall(r'(\d+) [AÀ] (\d+) DIÁRIAS',
                           response.text,
@@ -145,18 +147,18 @@ class AeroPark(Estacionamento):
         precos = list(map(lambda x: float(''.join(x).replace(',', '.')),
                           precos))
         # Descobertas
-        nums_d = nums[:len(nums)//2]
+        nums_d = nums[:len(nums) // 2]
         precos_d = precos[:len(nums_d)]
         preco_d = None
         if nd <= nums_d[0]:
-            preco_d = nd*precos_d[0]
+            preco_d = nd * precos_d[0]
         else:
             for ns, ps in zip(nums_d[1:], precos_d[1:]):
                 if nd <= ns:
                     preco_d = ps
                     break
         nums_c = nums[len(nums_d):]
-        precos_c = precos[len(nums_d):len(nums_d)+len(nums_c)]
+        precos_c = precos[len(nums_d):len(nums_d) + len(nums_c)]
         preco_c = None
         if nd <= nums_c[0]:
             preco_c = nd*precos_c[0]
@@ -167,8 +169,11 @@ class AeroPark(Estacionamento):
                     break
 
         if preco_d is not None:
-            self.lista.append((preco_d, 'AeroPark descoberto'))
+            self.lista.append((preco_d, 'Descoberto'))
         if preco_c is not None:
             self.lista.append((preco_c, 'AeroPark coberto'))
+            self.lista.append((preco_c, 'Coberto'))
+
+
 
 
