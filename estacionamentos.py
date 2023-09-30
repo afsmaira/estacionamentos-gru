@@ -24,6 +24,15 @@ class Estacionamento:
             return r
         raise StopIteration
 
+    def __str__(self):
+        d = self.dist()
+        t = self.tempo()
+        r = self.nome()
+        if len(d) > 0:
+            r += f' ({d}, {t})'
+        return r
+
+
 
 class GRU(Estacionamento):
     def __init__(self, ini, fim, promo):
