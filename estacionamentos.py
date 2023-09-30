@@ -9,6 +9,7 @@ class Estacionamento:
         print(f'Verificando {self.nome()}...')
         self.ini = dt2.strptime(ini, '%Y-%m-%d %H:%M')
         self.fim = dt2.strptime(fim, '%Y-%m-%d %H:%M')
+        self.dt = self.fim - self.ini
         self.lista = []
         self.i = 0
 
