@@ -21,7 +21,11 @@ class Estacionamento:
         if self.i < len(self.lista):
             r = self.lista[self.i]
             self.i += 1
-            return r
+            if len(r) == 2:
+                r += ('',)
+            else:
+                r = r[:-1] + (' (' + r[-1] + ')',)
+            return r[0], (str(self) + ' ' + r[1]).strip(), r[2]
         raise StopIteration
 
     def __str__(self):
@@ -32,6 +36,36 @@ class Estacionamento:
             r += f' ({d}, {t})'
         return r
 
+    def geo(self):
+        return busca_local(gmaps, self.nome())
+
+    def busca(self):
+        if self.busca_maps is None:
+            if gmaps is None:
+                return
+            nome = self.geo()
+            if nome is None:
+                self.busca_maps = None
+            else:
+                self.busca_maps = gmaps.distance_matrix(nome, f'Terminal {terminal}, GRU')['rows'][0]['elements'][0]
+                if self.busca_maps['status'] in {'ZERO_RESULTS', 'NOT_FOUND'}:
+                    self.busca_maps = None
+        return self.busca_maps
+
+    def dist(self):
+        b = self.busca()
+        if b is None:
+            return ''
+        return b['distance']['text']
+
+    def tempo(self):
+        b = self.busca()
+        if b is None:
+            return ''
+        return b['duration']['text']
+
+    def nome(self):
+        return self.__class__.__name__
 
 
 class GRU(Estacionamento):
