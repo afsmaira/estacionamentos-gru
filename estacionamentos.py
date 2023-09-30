@@ -418,3 +418,36 @@ class UrbanPark(Estacionamento):
                       (preco2, 'coberto')]
 
 
+class ViajePark(Estacionamento):
+    """ https://www.viajepark.com.br/home """
+
+    def __init__(self, ini, fim, promo):
+        super().__init__(ini, fim)
+        response = requests.get('https://viajepark.com.br/precos.php',
+                                headers={
+                                    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+                                })
+        soup = BeautifulSoup(response.text, 'html.parser')
+        linhas = soup.find_all('tr')
+        ps = [linhas[1].findChildren('td')[1].text,
+              linhas[1].findChildren('td')[2].text,
+              linhas[-1].findChildren('td')[1].text,
+              linhas[-1].findChildren('td')[2].text,
+              ]
+        ps = [0.01*int(re.sub(r'\D', '', pi))
+              for pi in ps]
+        t1 = int(linhas[-2].findChildren('td')[0].text.split()[0])
+        t2 = int(linhas[-1].findChildren('td')[0].text.split()[0])
+        if self.dt < timedelta(days=t1):
+            preco1 = ps[0] * (self.dt.days + int(self.dt.seconds > 0))
+            preco2 = ps[1] * (self.dt.days + int(self.dt.seconds > 0))
+        elif self.dt < timedelta(days=t2):
+            preco1 = ps[2]
+            preco2 = ps[3]
+        else:
+            self.dt -= timedelta(days=t2)
+            preco1 = ps[2] + ps[0] * (self.dt.days + int(self.dt.seconds > 0))
+            preco2 = ps[3] + ps[1] * (self.dt.days + int(self.dt.seconds > 0))
+        self.lista = [(preco1, 'descoberto'),
+                      (preco2, 'coberto')]
+
