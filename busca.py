@@ -16,7 +16,7 @@ if __name__ == '__main__':
             try:
                 promo = promos.get('GRU', '')
                 lst += eval(f'{k}("{dh1}", "{dh2}", "{promo}")')
-            except NameError as err:
+            except (NameError, AttributeError, AssertionError) as err:
                 print(err)
     print('\n' + '\n'.join(f'{n}: R$ {p:.2f} {c}'
                            for p, n, c in sorted(lst)))
